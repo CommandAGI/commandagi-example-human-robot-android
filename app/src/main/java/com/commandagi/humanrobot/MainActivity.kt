@@ -63,8 +63,12 @@ class MainActivity : AppCompatActivity() {
 
     // ── settings (API key in SharedPreferences) ─────────────────────────────
     private fun prefs() = getSharedPreferences("commandagi", Context.MODE_PRIVATE)
-    private fun apiKey(): String? = prefs().getString("api_key", null)
-    private fun baseUrl(): String = prefs().getString("base_url", "https://api.commandagi.com")!!
+    // Prefer a key saved in Settings; otherwise fall back to one baked in at build time
+    // (-PcommandagiApiKey=…) so the app can auto-connect with zero in-app config.
+    private fun apiKey(): String? = prefs().getString("api_key", null)?.takeIf { it.isNotBlank() }
+        ?: BuildConfig.COMMANDAGI_API_KEY.takeIf { it.isNotBlank() }
+    private fun baseUrl(): String = prefs().getString("base_url", null)?.takeIf { it.isNotBlank() }
+        ?: BuildConfig.COMMANDAGI_BASE_URL
 
     private fun promptApiKey() {
         val input = EditText(this).apply {

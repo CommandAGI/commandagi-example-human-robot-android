@@ -13,6 +13,13 @@ android {
         targetSdk 34
         versionCode 1
         versionName '0.1'
+
+        // Optional pre-configuration: build with
+        //   ./gradlew assembleDebug -PcommandagiApiKey=cagi_… [-PcommandagiBaseUrl=…]
+        // to bake the key in (so the app auto-connects with no in-app setup). Defaults are empty →
+        // the app prompts for the key in Settings. Never commit a real key.
+        buildConfigField "String", "COMMANDAGI_API_KEY", "\"${project.findProperty('commandagiApiKey') ?: ''}\""
+        buildConfigField "String", "COMMANDAGI_BASE_URL", "\"${project.findProperty('commandagiBaseUrl') ?: 'https://api.commandagi.com'}\""
     }
     buildTypes {
         release {
@@ -25,7 +32,7 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = '17' }
-    buildFeatures { viewBinding false }
+    buildFeatures { buildConfig true }
 }
 
 dependencies {
