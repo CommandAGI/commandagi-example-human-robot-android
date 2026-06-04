@@ -44,6 +44,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var previewView: PreviewView
     private lateinit var instruction: TextView
     private lateinit var status: TextView
+    private lateinit var dictateToggle: TextView
+    private lateinit var dronePanel: View
+    private lateinit var droneLink: TextView
+    private lateinit var droneTelemetry: TextView
     private lateinit var prefs: Prefs
     private val analysisExecutor = Executors.newSingleThreadExecutor()
     private val net = Executors.newSingleThreadExecutor()
@@ -63,8 +67,16 @@ class MainActivity : AppCompatActivity() {
         previewView = findViewById(R.id.preview)
         instruction = findViewById(R.id.instruction)
         status = findViewById(R.id.status)
+        dictateToggle = findViewById(R.id.dictateToggle)
+        dronePanel = findViewById(R.id.dronePanel)
+        droneLink = findViewById(R.id.droneLink)
+        droneTelemetry = findViewById(R.id.droneTelemetry)
         findViewById<View>(R.id.settings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        dictateToggle.setOnClickListener {
+            prefs.dictate = !prefs.dictate
+            renderDictateToggle()
         }
         tts = TextToSpeech(this) { if (it == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault() }
 
@@ -80,14 +92,67 @@ class MainActivity : AppCompatActivity() {
         applyKeepAwake()
         // Camera facing may have changed in Settings.
         if (boundFacing != prefs.cameraFacing && hasCamera()) startCamera()
-        if (prefs.driver == Driver.DRONE) {
-            DroneRelay.ensure(this).second.start()
-            status.text = if (DroneRelay.isReady) "Driving a drone" else "Drone mode — open Settings to connect the ESP32"
-        }
+        applyModeUi()
         if (apiKey().isNullOrBlank()) {
             instruction.text = "Connect to CommandAGI in Settings"
         } else if (bridge == null) {
             connect()
+        }
+    }
+
+    /**
+     * Human mode: fullscreen camera + big move directions + a dictation quick-toggle. Drone mode: a
+     * status + remote-control panel over the lower half (the camera = the observation streamed up).
+     */
+    private fun applyModeUi() {
+        val drone = prefs.driver == Driver.DRONE
+        instruction.visibility = if (drone) View.GONE else View.VISIBLE
+        dronePanel.visibility = if (drone) View.VISIBLE else View.GONE
+        dictateToggle.visibility = if (drone) View.GONE else View.VISIBLE
+        renderDictateToggle()
+        if (drone) {
+            val (b, c) = DroneRelay.ensure(this)
+            c.start()
+            buildDroneControls(c)
+            b.onLink = { _, detail -> runOnUiThread { droneLink.text = "Drone link: $detail" } }
+            droneLink.text = "Drone link: " + if (DroneRelay.isReady) "connected" else "not connected (open Settings)"
+            status.text = if (DroneRelay.isReady) "Driving a drone" else "Drone mode"
+        } else if (bridge?.connected != true) {
+            status.text = if (apiKey().isNullOrBlank()) "Not connected" else "Connecting…"
+        }
+    }
+
+    private fun renderDictateToggle() {
+        dictateToggle.text = if (prefs.dictate) "Dictate: on" else "Dictate: off"
+    }
+
+    private var droneControlsBuilt = false
+    private fun buildDroneControls(c: com.commandagi.humanrobot.drone.DroneController) {
+        if (droneControlsBuilt) return
+        droneControlsBuilt = true
+        val grid = findViewById<android.widget.GridLayout>(R.id.droneControls)
+        grid.removeAllViews()
+        val buttons = listOf<Pair<String, () -> Unit>>(
+            "Takeoff" to { c.testTakeoff() }, "Forward" to { c.testForward() }, "Land" to { c.testLand() },
+            "Yaw L" to { c.testYawLeft() }, "Stop" to { c.testStop() }, "Yaw R" to { c.testYawRight() },
+            "Left" to { c.testLeft() }, "Back" to { c.testBack() }, "Right" to { c.testRight() },
+        )
+        for ((label, action) in buttons) {
+            val b = TextView(this).apply {
+                text = label
+                gravity = android.view.Gravity.CENTER
+                textSize = 14f
+                setTextColor(0xFFFFFFFF.toInt())
+                setPadding(0, 30, 0, 30)
+                setBackgroundColor(0x33FFFFFF)
+                setOnClickListener { action() }
+            }
+            val lp = android.widget.GridLayout.LayoutParams().apply {
+                width = 0
+                columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1, 1f)
+                setMargins(6, 6, 6, 6)
+            }
+            grid.addView(b, lp)
         }
     }
 
@@ -133,7 +198,8 @@ class MainActivity : AppCompatActivity() {
             Driver.DRONE -> {
                 DroneRelay.controller?.applyAgentAction(action, payload)
                 val ready = DroneRelay.isReady
-                instruction.text = (if (ready) "▸ " else "○ ") + droneText(action, payload)
+                droneTelemetry.text = "Last command: " + droneText(action, payload) +
+                    (if (ready) "  · relayed" else "  · (no drone — connect in Settings)")
             }
         }
     }

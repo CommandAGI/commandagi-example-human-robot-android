@@ -4,13 +4,13 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
-    <!-- Camera fills the screen. -->
+    <!-- Camera. Fills the screen in human mode; the drone panel overlays the lower half in drone mode. -->
     <androidx.camera.view.PreviewView
         android:id="@+id/preview"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- Connection status, top. -->
+    <!-- Connection status, top-left. -->
     <TextView
         android:id="@+id/status"
         android:layout_width="wrap_content"
@@ -24,7 +24,7 @@
         android:textColor="#FFFFFF"
         android:textSize="13sp" />
 
-    <!-- Settings (API key), top-right. -->
+    <!-- Settings, top-right. -->
     <TextView
         android:id="@+id/settings"
         android:layout_width="wrap_content"
@@ -38,7 +38,23 @@
         android:textColor="#FFFFFF"
         android:textSize="13sp" />
 
-    <!-- The instruction the human should perform, big, at the bottom. -->
+    <!-- Dictation quick-toggle (human mode only), under the status chip. -->
+    <TextView
+        android:id="@+id/dictateToggle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="54dp"
+        android:background="#80000000"
+        android:paddingHorizontal="10dp"
+        android:paddingVertical="6dp"
+        android:text="Dictate: on"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+    <!-- HUMAN mode: the instruction to perform, big, at the bottom. -->
     <TextView
         android:id="@+id/instruction"
         android:layout_width="match_parent"
@@ -51,4 +67,53 @@
         android:textColor="#FFFFFF"
         android:textSize="34sp"
         android:textStyle="bold" />
+
+    <!-- DRONE mode: a status + remote-control panel over the lower half (the camera view = the
+         observation streamed up). -->
+    <LinearLayout
+        android:id="@+id/dronePanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="#CC000000"
+        android:orientation="vertical"
+        android:paddingHorizontal="16dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="20dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/droneLink"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Drone link: not connected"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/droneTelemetry"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Last command: —"
+            android:textColor="#C8FFFFFF"
+            android:textSize="13sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="MANUAL CONTROL"
+            android:textColor="#80FFFFFF"
+            android:textSize="11sp"
+            android:letterSpacing="0.05" />
+
+        <GridLayout
+            android:id="@+id/droneControls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:columnCount="3" />
+    </LinearLayout>
 </FrameLayout>
