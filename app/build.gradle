@@ -44,4 +44,6 @@ dependencies {
     implementation "androidx.camera:camera-lifecycle:$camerax"
     implementation "androidx.camera:camera-view:$camerax"
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    // USB-OTG serial to the ESP32 relay (drone mode).
+    implementation 'com.github.mik3y:usb-serial-for-android:3.7.0'
 }

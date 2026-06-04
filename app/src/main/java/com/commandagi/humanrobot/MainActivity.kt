@@ -2,18 +2,22 @@ package com.commandagi.humanrobot
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.YuvImage
+import android.os.Build
 import android.os.Bundle
-import android.text.InputType
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+import android.speech.tts.TextToSpeech
 import android.view.View
-import android.widget.EditText
+import android.view.WindowManager
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -22,23 +26,30 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import com.commandagi.humanrobot.drone.DroneRelay
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.util.Locale
 import java.util.concurrent.Executors
 
 /**
- * Be a robot. The phone registers itself as a robot on CommandAGI: its camera fills the screen and
- * streams up as the robot's observation, and the move/turn actions the platform sends are shown big
- * at the bottom for you (the human) to perform.
+ * Runtime screen. The phone registers as a robot on CommandAGI; its camera fills the screen and
+ * streams up as the robot’s observation. What happens with the control actions the platform sends
+ * depends on the "What am I driving?" setting:
+ *  • Human — the move/turn instruction is shown big at the bottom (and optionally spoken / vibrated).
+ *  • Drone — the action is relayed to an ESP32 → Wi-Fi AP drone, and echoed on screen as telemetry.
  */
 class MainActivity : AppCompatActivity() {
 
     private lateinit var previewView: PreviewView
     private lateinit var instruction: TextView
     private lateinit var status: TextView
+    private lateinit var prefs: Prefs
     private val analysisExecutor = Executors.newSingleThreadExecutor()
     private val net = Executors.newSingleThreadExecutor()
     private var bridge: CommandAgiBridge? = null
+    private var tts: TextToSpeech? = null
+    private var boundFacing: String = ""
     @Volatile private var lastSentMs = 0L
 
     private val requestCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -48,47 +59,53 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        prefs = Prefs(this)
         previewView = findViewById(R.id.preview)
         instruction = findViewById(R.id.instruction)
         status = findViewById(R.id.status)
-        findViewById<View>(R.id.settings).setOnClickListener { promptApiKey() }
+        findViewById<View>(R.id.settings).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        tts = TextToSpeech(this) { if (it == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault() }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             startCamera()
         } else {
             requestCamera.launch(Manifest.permission.CAMERA)
         }
-        if (apiKey().isNullOrBlank()) promptApiKey() else connect()
     }
 
-    // ── settings (API key in SharedPreferences) ─────────────────────────────
-    private fun prefs() = getSharedPreferences("commandagi", Context.MODE_PRIVATE)
-    // Prefer a key saved in Settings; otherwise fall back to one baked in at build time
-    // (-PcommandagiApiKey=…) so the app can auto-connect with zero in-app config.
-    private fun apiKey(): String? = prefs().getString("api_key", null)?.takeIf { it.isNotBlank() }
-        ?: BuildConfig.COMMANDAGI_API_KEY.takeIf { it.isNotBlank() }
-    private fun baseUrl(): String = prefs().getString("base_url", null)?.takeIf { it.isNotBlank() }
-        ?: BuildConfig.COMMANDAGI_BASE_URL
-
-    private fun promptApiKey() {
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT
-            setText(apiKey() ?: "")
-            hint = "cagi_…"
+    override fun onResume() {
+        super.onResume()
+        applyKeepAwake()
+        // Camera facing may have changed in Settings.
+        if (boundFacing != prefs.cameraFacing && hasCamera()) startCamera()
+        if (prefs.driver == Driver.DRONE) {
+            DroneRelay.ensure(this).second.start()
+            status.text = if (DroneRelay.isReady) "Driving a drone" else "Drone mode — open Settings to connect the ESP32"
         }
-        AlertDialog.Builder(this)
-            .setTitle("CommandAGI API key")
-            .setMessage("Paste an API key (operator scope) from your CommandAGI dashboard.")
-            .setView(input)
-            .setPositiveButton("Save") { _, _ ->
-                prefs().edit().putString("api_key", input.text.toString().trim()).apply()
-                connect()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        if (apiKey().isNullOrBlank()) {
+            instruction.text = "Set your API key in Settings"
+        } else if (bridge == null) {
+            connect()
+        }
     }
 
-    // ── connect the bridge ──────────────────────────────────────────────────
+    // ── settings access ───────────────────────────────────────────────────────
+    private fun apiKey(): String? = prefs.apiKey ?: BuildConfig.COMMANDAGI_API_KEY.takeIf { it.isNotBlank() }
+    private fun baseUrl(): String = prefs.baseUrl ?: BuildConfig.COMMANDAGI_BASE_URL
+
+    private fun applyKeepAwake() {
+        // While streaming we keep the screen on; the human "Keep awake" toggle additionally holds it
+        // on between instructions. Either way the relevant flag is set while this screen is live.
+        if (prefs.keepAwake || prefs.driver == Driver.DRONE) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    // ── connect the cloud bridge ──────────────────────────────────────────────
     private fun connect() {
         val key = apiKey()
         if (key.isNullOrBlank()) return
@@ -96,7 +113,7 @@ class MainActivity : AppCompatActivity() {
         val b = CommandAgiBridge(
             apiKey = key,
             baseUrl = baseUrl(),
-            onAction = { action, payload -> runOnUiThread { showInstruction(action, payload) } },
+            onAction = { action, payload -> runOnUiThread { handleAction(action, payload) } },
             onStatus = { s, _ -> runOnUiThread { status.text = s } },
         )
         bridge = b
@@ -105,19 +122,62 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showInstruction(action: String, payload: JSONObject) {
-        instruction.text = when (action) {
-            "move" -> "⬆  MOVE FORWARD"
-            "back" -> "⬇  MOVE BACKWARD"
-            "turn" -> if (payload.optString("dir", "left") == "right") "➡  TURN RIGHT" else "⬅  TURN LEFT"
-            "stop" -> "✋  STOP"
-            "reset" -> "↺  RETURN TO START"
-            else -> action.uppercase()
+    private fun handleAction(action: String, payload: JSONObject) {
+        when (prefs.driver) {
+            Driver.HUMAN -> {
+                val text = humanText(action, payload)
+                instruction.text = text
+                if (prefs.dictate) tts?.speak(spoken(action, payload), TextToSpeech.QUEUE_FLUSH, null, "instr")
+                if (prefs.haptics) vibrate()
+            }
+            Driver.DRONE -> {
+                DroneRelay.controller?.applyAgentAction(action, payload)
+                val ready = DroneRelay.isReady
+                instruction.text = (if (ready) "▸ " else "○ ") + droneText(action, payload)
+            }
         }
     }
 
-    // ── camera: fill the screen, stream JPEG frames ─────────────────────────
+    private fun humanText(action: String, payload: JSONObject): String = when (action) {
+        "move" -> "⬆  MOVE FORWARD"
+        "back" -> "⬇  MOVE BACKWARD"
+        "turn" -> if (payload.optString("dir", "left") == "right") "➡  TURN RIGHT" else "⬅  TURN LEFT"
+        "stop" -> "✋  STOP"
+        "reset" -> "↺  RETURN TO START"
+        else -> action.uppercase()
+    }
+
+    private fun spoken(action: String, payload: JSONObject): String = when (action) {
+        "move" -> "Move forward"
+        "back" -> "Move backward"
+        "turn" -> if (payload.optString("dir", "left") == "right") "Turn right" else "Turn left"
+        "stop" -> "Stop"
+        "reset" -> "Return to start"
+        else -> action
+    }
+
+    private fun droneText(action: String, payload: JSONObject): String = when (action) {
+        "turn" -> "TURN " + payload.optString("dir", "left").uppercase()
+        else -> action.uppercase()
+    }
+
+    private fun vibrate() {
+        val effect = VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE)
+        if (Build.VERSION.SDK_INT >= 31) {
+            (getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator.vibrate(effect)
+        } else {
+            @Suppress("DEPRECATION") (getSystemService(Context.VIBRATOR_SERVICE) as Vibrator).vibrate(effect)
+        }
+    }
+
+    // ── camera: fill the screen, stream JPEG frames ───────────────────────────
+    private fun hasCamera() =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
     private fun startCamera() {
+        val facing = prefs.cameraFacing
+        boundFacing = facing
+        val selector = if (facing == "front") CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             val provider = future.get()
@@ -127,7 +187,13 @@ class MainActivity : AppCompatActivity() {
                 .build()
             analysis.setAnalyzer(analysisExecutor) { image -> onFrame(image) }
             provider.unbindAll()
-            provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+            try {
+                provider.bindToLifecycle(this, selector, preview, analysis)
+            } catch (e: Exception) {
+                // Fall back to the back camera if the requested lens is unavailable.
+                provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                boundFacing = "back"
+            }
         }, ContextCompat.getMainExecutor(this))
     }
 
@@ -147,6 +213,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         bridge?.stop()
+        tts?.shutdown()
         analysisExecutor.shutdown()
         net.shutdown()
     }
