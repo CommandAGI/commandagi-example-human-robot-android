@@ -19,9 +19,11 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
+import android.widget.Toast
 import com.commandagi.humanrobot.drone.DroneController
 import com.commandagi.humanrobot.drone.DroneRelay
 import com.commandagi.humanrobot.drone.EspBridge
+import com.commandagi.humanrobot.oauth.OAuthClient
 
 /**
  * Settings screen. A segmented "What am I driving?" toggle (Human / Drone) swaps the options shown
@@ -60,11 +62,11 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_settings)
         prefs = Prefs(this)
 
-        // API key
-        val apiKeyValue = findViewById<TextView>(R.id.apiKeyValue)
-        fun renderKey() { apiKeyValue.text = prefs.apiKey?.let { mask(it) } ?: "Tap to set" }
-        renderKey()
-        apiKeyValue.setOnClickListener { promptApiKey { renderKey() } }
+        // Account — "Connect to CommandAGI" (OAuth); no API key to copy.
+        findViewById<TextView>(R.id.connectButton).setOnClickListener {
+            if (prefs.apiKey != null) disconnectAccount() else startConnect()
+        }
+        renderAccount()
 
         // Mode toggle
         modeHuman = findViewById(R.id.modeHuman)
@@ -287,26 +289,45 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    private fun promptApiKey(after: () -> Unit) {
-        val input = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT
-            setText(prefs.apiKey ?: "")
-            hint = "cagi_…"
+    // ── account: Connect to CommandAGI (OAuth, PKCE) ──────────────────────────
+    private fun renderAccount() {
+        val btn = findViewById<TextView>(R.id.connectButton)
+        val status = findViewById<TextView>(R.id.accountStatus)
+        if (prefs.apiKey != null) {
+            btn.text = "Disconnect"
+            status.text = if (prefs.connectedViaOAuth) "Connected to your CommandAGI account."
+                else "Connected (preconfigured key)."
+        } else {
+            btn.text = "Connect to CommandAGI"
+            status.text = "Connect your CommandAGI account so an agent can drive you — no API key to copy."
         }
-        AlertDialog.Builder(this)
-            .setTitle("CommandAGI API key")
-            .setMessage("Paste an API key (operator scope) from your CommandAGI dashboard.")
-            .setView(input)
-            .setPositiveButton("Save") { _, _ -> prefs.apiKey = input.text.toString().trim(); after() }
-            .setNegativeButton("Cancel", null)
-            .show()
+    }
+
+    private fun startConnect() {
+        val pkce = OAuthClient.newPkce()
+        val state = OAuthClient.randomState()
+        prefs.pkceVerifier = pkce.verifier
+        prefs.oauthState = state
+        val apiBase = prefs.baseUrl ?: BuildConfig.COMMANDAGI_BASE_URL
+        val url = OAuthClient.authorizeUrl(OAuthClient.webBaseFrom(apiBase), pkce.challenge, state)
+        try {
+            startActivity(Intent(Intent.ACTION_VIEW, url))
+        } catch (e: Exception) {
+            Toast.makeText(this, "No browser available to sign in", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun disconnectAccount() {
+        prefs.apiKey = null
+        prefs.connectedViaOAuth = false
+        renderAccount()
+        Toast.makeText(this, "Disconnected. Revoke access anytime in commandagi.com → Settings → Connected apps.", Toast.LENGTH_LONG).show()
     }
 
     private fun hint(text: String) = TextView(this).apply {
         this.text = text; textSize = 13f; setTextColor(muted); setPadding(0, 16, 0, 16)
     }
 
-    private fun mask(key: String) = if (key.length <= 10) "••••" else key.take(8) + "…" + key.takeLast(4)
     private fun openUrl(url: String) =
         try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
 
@@ -322,6 +343,7 @@ class SettingsActivity : AppCompatActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag") registerReceiver(usbReceiver, filter)
         }
         if (prefs.driver == Driver.DRONE) bridge?.refresh()
+        renderAccount()
     }
 
     override fun onPause() {

@@ -46,4 +46,15 @@ class Prefs(context: Context) {
     var lastSsid: String?
         get() = sp.getString("drone_ssid", null)
         set(v) = sp.edit().putString("drone_ssid", v).apply()
+
+    // OAuth "Connect to CommandAGI account" — transient PKCE state + connection flag
+    var pkceVerifier: String?
+        get() = sp.getString("pkce_verifier", null)
+        set(v) = sp.edit().putString("pkce_verifier", v).apply()
+    var oauthState: String?
+        get() = sp.getString("oauth_state", null)
+        set(v) = sp.edit().putString("oauth_state", v).apply()
+    var connectedViaOAuth: Boolean
+        get() = sp.getBoolean("connected_oauth", false)
+        set(v) = sp.edit().putBoolean("connected_oauth", v).apply()
 }

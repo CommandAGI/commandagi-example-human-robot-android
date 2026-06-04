@@ -85,7 +85,7 @@ class MainActivity : AppCompatActivity() {
             status.text = if (DroneRelay.isReady) "Driving a drone" else "Drone mode — open Settings to connect the ESP32"
         }
         if (apiKey().isNullOrBlank()) {
-            instruction.text = "Set your API key in Settings"
+            instruction.text = "Connect to CommandAGI in Settings"
         } else if (bridge == null) {
             connect()
         }

@@ -19,18 +19,20 @@
             android:textSize="26sp"
             android:textStyle="bold" />
 
-        <!-- Connection -->
-        <TextView style="@style/SettingsLabel" android:text="CommandAGI API key" />
+        <!-- Account -->
+        <TextView style="@style/SettingsLabel" android:text="Account" />
         <TextView
-            android:id="@+id/apiKeyValue"
+            android:id="@+id/connectButton"
+            style="@style/PrimaryButton"
+            android:text="Connect to CommandAGI" />
+        <TextView
+            android:id="@+id/accountStatus"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:background="#F1F3F4"
-            android:padding="14dp"
-            android:text="Tap to set"
-            android:textColor="#202124"
-            android:textSize="15sp" />
+            android:layout_marginTop="8dp"
+            android:text="Connect your CommandAGI account so an agent can drive you — no API key to copy."
+            android:textColor="#5F6368"
+            android:textSize="13sp" />
 
         <!-- What am I driving? — segmented toggle (squircle-style preference) -->
         <TextView style="@style/SettingsLabel" android:text="What am I driving?" />
