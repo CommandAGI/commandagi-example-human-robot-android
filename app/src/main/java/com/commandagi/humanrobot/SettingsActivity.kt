@@ -240,7 +240,7 @@ class SettingsActivity : AppCompatActivity() {
         addLearnItem(body, "How do I install the relay firmware?",
             "Flash the firmware in this repo’s firmware/esp32_drone_link with PlatformIO:\n" +
                 "  cd firmware/esp32_drone_link && pio run -t upload\n" +
-                "Full steps are in firmware/FLASHING.md. Tap to open the repo.") { openUrl("https://github.com/CommandAGI/commandagi-example-human-robot/blob/main/firmware/FLASHING.md") }
+                "Full steps are in firmware/FLASHING.md. Tap to open the repo.") { openUrl("https://github.com/commandAGI/commandagi-example-human-robot/blob/main/firmware/FLASHING.md") }
     }
 
     private fun addLearnItem(parent: LinearLayout, title: String, detail: String, onTapBody: (() -> Unit)? = null) {
