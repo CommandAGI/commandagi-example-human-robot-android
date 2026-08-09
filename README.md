@@ -68,5 +68,5 @@ types — a starting point; robot arms and other relays can follow the same patt
 - The YUV→JPEG frame conversion is the simple path; tighten per-device pixel strides if colors look
   off. No wrapper jar is committed; Android Studio regenerates it on first sync.
 
-Built on the CommandAGI robot API. SDKs: [Python](https://github.com/commandAGI/commandagi-python) ·
-[Node](https://github.com/commandAGI/commandagi-node). MIT licensed.
+Built on the CommandAGI robot API. SDKs: [Python](https://github.com/CommandAGI/commandagi-python) ·
+[Node](https://github.com/CommandAGI/commandagi-node). MIT licensed.
