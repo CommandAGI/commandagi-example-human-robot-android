@@ -5,7 +5,7 @@ registers as a robot: its **camera fills the screen and streams up** as the robo
 the **drive actions a remote driver sends** — move forward / back / turn / stop — are carried out.
 
 A **"What am I driving?"** setting (a segmented toggle, mirroring a squircle-vs-rounded-rect
-preference) chooses *what* those actions control:
+preference) chooses _what_ those actions control:
 
 - **Human** — you are the robot. The instruction appears **big at the bottom** for you to perform,
   and can be **spoken aloud** and **vibrate** on each new direction.
